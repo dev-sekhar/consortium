@@ -115,6 +115,8 @@ def add_member():
     Endpoint to manually add a member.
     """
     try:
+        if len(membership.get_members()) > 0:
+            return jsonify({'message': 'Manual addition of members is restricted to the first member only.'}), 403
         values = request.get_json()
         required = ['id', 'name']
         if not all(k in values for k in required):

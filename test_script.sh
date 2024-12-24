@@ -14,13 +14,21 @@ execute_curl() {
 echo "Adding the first member..."
 execute_curl "curl -X POST -H \"Content-Type: application/json\" -d '{\"id\": \"member1\", \"name\": \"Member One\"}' $BASE_URL/membership/add"
 
-# Add the second member manually
-echo "Adding the second member..."
-execute_curl "curl -X POST -H \"Content-Type: application/json\" -d '{\"id\": \"member2\", \"name\": \"Member Two\"}' $BASE_URL/membership/add"
+# Request membership for member2
+echo "Requesting membership for member2..."
+execute_curl "curl -X POST -H \"Content-Type: application/json\" -d '{\"id\": \"member2\", \"name\": \"Member Two\"}' $BASE_URL/membership/request"
 
 # Request membership for member3
 echo "Requesting membership for member3..."
 execute_curl "curl -X POST -H \"Content-Type: application/json\" -d '{\"id\": \"member3\", \"name\": \"Member Three\"}' $BASE_URL/membership/request"
+
+# Approve the membership request for member2 by member1
+echo "Approving membership request for member2 by member1..."
+execute_curl "curl -X POST -H \"Content-Type: application/json\" -d '{\"request_id\": \"member2\", \"voter_id\": \"member1\", \"action\": \"approve\"}' $BASE_URL/membership/vote"
+
+# Approve the membership request for member2 by member3
+echo "Approving membership request for member2 by member3..."
+execute_curl "curl -X POST -H \"Content-Type: application/json\" -d '{\"request_id\": \"member2\", \"voter_id\": \"member3\", \"action\": \"approve\"}' $BASE_URL/membership/vote"
 
 # Reject the membership request for member3 by member1
 echo "Rejecting membership request for member3 by member1..."
