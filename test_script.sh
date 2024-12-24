@@ -26,10 +26,6 @@ execute_curl "curl -X POST -H \"Content-Type: application/json\" -d '{\"id\": \"
 echo "Approving membership request for member2 by member1..."
 execute_curl "curl -X POST -H \"Content-Type: application/json\" -d '{\"request_id\": \"member2\", \"voter_id\": \"member1\", \"action\": \"approve\"}' $BASE_URL/membership/vote"
 
-# Approve the membership request for member2 by member3
-echo "Approving membership request for member2 by member3..."
-execute_curl "curl -X POST -H \"Content-Type: application/json\" -d '{\"request_id\": \"member2\", \"voter_id\": \"member3\", \"action\": \"approve\"}' $BASE_URL/membership/vote"
-
 # Reject the membership request for member3 by member1
 echo "Rejecting membership request for member3 by member1..."
 execute_curl "curl -X POST -H \"Content-Type: application/json\" -d '{\"request_id\": \"member3\", \"voter_id\": \"member1\", \"action\": \"reject\"}' $BASE_URL/membership/vote"
@@ -49,3 +45,17 @@ execute_curl "curl $BASE_URL/membership/members"
 # Query for rejected members
 echo "Querying for rejected members..."
 execute_curl "curl $BASE_URL/membership/members?status=rejected"
+
+# Add transactions from registered members
+echo "Adding transactions from registered members..."
+execute_curl "curl -X POST -H \"Content-Type: application/json\" -d '{\"sender\": \"member1\", \"recipient\": \"member2\", \"amount\": 10}' $BASE_URL/transactions/new"
+execute_curl "curl -X POST -H \"Content-Type: application/json\" -d '{\"sender\": \"member2\", \"recipient\": \"member1\", \"amount\": 5}' $BASE_URL/transactions/new"
+
+# Add transactions from unregistered members
+echo "Adding transactions from unregistered members..."
+execute_curl "curl -X POST -H \"Content-Type: application/json\" -d '{\"sender\": \"unregistered1\", \"recipient\": \"member1\", \"amount\": 15}' $BASE_URL/transactions/new"
+execute_curl "curl -X POST -H \"Content-Type: application/json\" -d '{\"sender\": \"member1\", \"recipient\": \"unregistered2\", \"amount\": 20}' $BASE_URL/transactions/new"
+
+# Retrieve the full blockchain
+echo "Retrieving the full blockchain..."
+execute_curl "curl $BASE_URL/chain"

@@ -21,6 +21,7 @@ membership = Membership()
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 
+
 @app.route('/transactions/new', methods=['POST'])
 def new_transaction():
     """
@@ -31,12 +32,21 @@ def new_transaction():
         required = ['sender', 'recipient', 'amount']
         if not all(k in values for k in required):
             return 'Missing values', 400
-        index = blockchain.new_transaction(values['sender'], values['recipient'], values['amount'])
+
+        # Check if sender and recipient are registered members
+        registered_members = [member['id']
+                              for member in membership.get_members()]
+        if values['sender'] not in registered_members or values['recipient'] not in registered_members:
+            return jsonify({'message': 'Unauthorized: Sender or recipient is not a registered member'}), 403
+
+        index = blockchain.new_transaction(
+            values['sender'], values['recipient'], values['amount'])
         response = {'message': f'Transaction will be added to Block {index}'}
         return jsonify(response), 201
     except Exception as e:
         app.logger.error(f"Error during new transaction: {e}")
         return "Internal Server Error", 500
+
 
 @app.route('/chain', methods=['GET'])
 def full_chain():
@@ -53,6 +63,7 @@ def full_chain():
         app.logger.error(f"Error retrieving full chain: {e}")
         return "Internal Server Error", 500
 
+
 @app.route('/membership/request', methods=['POST'])
 def request_membership():
     """
@@ -63,12 +74,15 @@ def request_membership():
         required = ['id', 'name']
         if not all(k in values for k in required):
             return 'Missing values', 400
-        membership_request = membership.request_membership(values['id'], values['name'])
-        response = {'message': 'Membership request submitted', 'request': membership_request}
+        membership_request = membership.request_membership(
+            values['id'], values['name'])
+        response = {'message': 'Membership request submitted',
+                    'request': membership_request}
         return jsonify(response), 201
     except Exception as e:
         app.logger.error(f"Error during membership request: {e}")
         return "Internal Server Error", 500
+
 
 @app.route('/membership/vote', methods=['POST'])
 def vote_for_member():
@@ -80,16 +94,20 @@ def vote_for_member():
         required = ['request_id', 'voter_id', 'action']
         if not all(k in values for k in required):
             return 'Missing values', 400
-        app.logger.debug(f"Received vote request for: {values['request_id']} from voter: {values['voter_id']} with action: {values['action']}")
-        membership_request = membership.vote_for_member(values['request_id'], values['voter_id'], values['action'])
+        app.logger.debug(f"Received vote request for: {values['request_id']} from voter: {
+                         values['voter_id']} with action: {values['action']}")
+        membership_request = membership.vote_for_member(
+            values['request_id'], values['voter_id'], values['action'])
         if membership_request:
-            response = {'message': 'Vote submitted', 'request': membership_request}
+            response = {'message': 'Vote submitted',
+                        'request': membership_request}
         else:
             response = {'message': 'Request not found'}
         return jsonify(response), 200
     except Exception as e:
         app.logger.error(f"Error during voting: {e}")
         return "Internal Server Error", 500
+
 
 @app.route('/membership/members', methods=['GET'])
 def get_members():
@@ -109,6 +127,7 @@ def get_members():
         app.logger.error(f"Error retrieving members: {e}")
         return "Internal Server Error", 500
 
+
 @app.route('/membership/add', methods=['POST'])
 def add_member():
     """
@@ -122,11 +141,13 @@ def add_member():
         if not all(k in values for k in required):
             return 'Missing values', 400
         membership.add_member(values['id'], values['name'])
-        response = {'message': 'Member added', 'member': {'id': values['id'], 'name': values['name']}}
+        response = {'message': 'Member added', 'member': {
+            'id': values['id'], 'name': values['name']}}
         return jsonify(response), 201
     except Exception as e:
         app.logger.error(f"Error adding member: {e}")
         return "Internal Server Error", 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
