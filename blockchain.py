@@ -7,13 +7,15 @@ import hashlib
 import json
 from time import time
 from convert_to_ethereum_address import convert_to_ethereum_address
+from consensus import ProofOfVote
 
 
 class Blockchain:
     def __init__(self):
         self.chain = []
         self.current_transactions = []
-        self.registered_members = []  # Add this line to initialize the list
+        self.registered_members = []
+        self.consensus = ProofOfVote()  # Initialize consensus mechanism
         # Create the genesis block
         self.new_block(previous_hash='1')
 
@@ -29,6 +31,11 @@ class Blockchain:
             'transactions': self.current_transactions,
             'previous_hash': previous_hash or self.hash(self.chain[-1]),
         }
+
+        # Calculate block hash immediately
+        block['hash'] = self.hash(block)
+
+        # Reset the current list of transactions
         self.current_transactions = []
         self.chain.append(block)
         return block
@@ -73,6 +80,39 @@ class Blockchain:
         :return: <dict> Last Block
         """
         return self.chain[-1]
+
+    def propose_block(self, proposer):
+        """
+        Propose a new block using the consensus mechanism
+        """
+        if proposer not in self.registered_members:
+            raise ValueError("Only registered members can propose blocks")
+
+        block = self.consensus.propose_block(
+            self.chain,
+            self.current_transactions,
+            proposer
+        )
+        return block
+
+    def vote_for_block(self, block_index, voter_address):
+        """
+        Vote for a proposed block
+        """
+        block, approved = self.consensus.vote_for_block(
+            block_index,
+            voter_address,
+            self.registered_members
+        )
+
+        if approved:
+            # Add the approved block to the chain
+            block['hash'] = self.hash(block)
+            self.chain.append(block)
+            self.current_transactions = []
+            self.consensus.remove_block(block)
+
+        return block
 
 
 class Membership:

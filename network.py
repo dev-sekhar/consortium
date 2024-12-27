@@ -163,6 +163,51 @@ def get_members():
     return jsonify({'members': members}), 200
 
 
+@app.route('/block/propose', methods=['POST'])
+def propose_block():
+    values = request.get_json()
+    proposer = values.get('proposer')
+
+    try:
+        block = blockchain.propose_block(proposer)
+        response = {
+            'message': 'New block proposed',
+            'block': block
+        }
+        return jsonify(response), 201
+    except ValueError as e:
+        return str(e), 400
+
+
+@app.route('/block/vote', methods=['POST'])
+def vote_block():
+    values = request.get_json()
+
+    required = ['block_index', 'voter_address']
+    if not all(k in values for k in required):
+        return 'Missing values', 400
+
+    try:
+        block = blockchain.vote_for_block(
+            values['block_index'],
+            values['voter_address']
+        )
+
+        response = {
+            'message': 'Vote recorded',
+            'block': block
+        }
+        return jsonify(response), 200
+    except ValueError as e:
+        return str(e), 400
+
+
+@app.route('/block/pending', methods=['GET'])
+def get_pending_blocks():
+    blocks = blockchain.consensus.get_pending_blocks()
+    return jsonify({'pending_blocks': blocks}), 200
+
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
     app.run(host='0.0.0.0', port=5000)
