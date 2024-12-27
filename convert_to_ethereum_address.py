@@ -1,24 +1,25 @@
-import base64
-import hashlib
-from eth_utils import keccak
+from eth_utils import keccak, to_checksum_address
+import binascii
+
 
 def convert_to_ethereum_address(public_key_pem):
-    # Remove the PEM header and footer
-    public_key_pem = public_key_pem.replace("-----BEGIN PUBLIC KEY-----", "").replace("-----END PUBLIC KEY-----", "").replace("\n", "")
-    
-    # Decode the base64 encoded public key
-    public_key_bytes = base64.b64decode(public_key_pem)
-    
-    # Perform Keccak-256 hashing on the public key
-    keccak_hash = keccak(public_key_bytes)
-    
-    # Take the last 20 bytes of the Keccak-256 hash
+    """
+    Convert a public key to an Ethereum address.
+    :param public_key_pem: <str> Public key in PEM format
+    :return: <str> Ethereum address
+    """
+    # Convert PEM string to hex
+    hex_str = binascii.hexlify(public_key_pem.encode()).decode()
+
+    # Take the Keccak-256 hash of the public key
+    keccak_hash = keccak(bytes.fromhex(hex_str))
+
+    # Take the last 20 bytes
     address_bytes = keccak_hash[-20:]
-    
-    # Convert the result to a hexadecimal address
-    address_hex = "0x" + address_bytes.hex()
-    
-    return address_hex
+
+    # Convert to checksum address
+    return to_checksum_address(address_bytes)
+
 
 # Example usage
 if __name__ == "__main__":

@@ -3,13 +3,16 @@ This file handles membership requests and voting.
 It defines the Membership class which manages membership requests and the list of members.
 """
 
+from blockchain import Blockchain
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
-from convert_to_ethereum_address import convert_to_ethereum_address  # Ensure this import is correct
+from convert_to_ethereum_address import convert_to_ethereum_address
+
 
 class Membership:
-    def __init__(self):
+    def __init__(self, blockchain):
+        self.blockchain = blockchain
         self.members = []
         self.requests = []
 
@@ -37,6 +40,21 @@ class Membership:
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         )
         return pem.decode('utf-8')
+
+    def add_member(self, name):
+        """
+        Manually add a member to the list of approved members.
+        :param name: <str> Name of the member
+        :return: <dict> Member object
+        """
+        public_key, private_key = self.generate_key_pair()
+        public_key_pem = self.serialize_public_key(public_key)
+        address = convert_to_ethereum_address(public_key_pem)
+        member = {'address': address, 'name': name}
+        self.members.append(member)
+        # Register the member in the blockchain
+        self.blockchain.register_member(address)
+        return member
 
     def request_membership(self, name):
         """
@@ -74,7 +92,10 @@ class Membership:
                         request['request']['votes'] += 1
                         if request['request']['votes'] >= (len(self.members) // 2) + 1:
                             request['request']['status'] = 'Approved'
-                            self.members.append({'address': request['request']['address'], 'name': request['request']['name']})
+                            self.members.append(
+                                {'address': request['request']['address'], 'name': request['request']['name']})
+                            self.blockchain.register_member(
+                                request['request']['address'])
                     elif action == 'reject':
                         request['request']['rejections'] += 1
                         if request['request']['rejections'] >= (len(self.members) // 2) + 1:
@@ -82,35 +103,9 @@ class Membership:
                     return request['request']
         return None
 
-    def get_members(self, status=None):
+    def get_addresses(self):
         """
-        Get the list of members.
-        :param status: (Optional) <str> Status to filter members by
-        :return: <list> List of members
+        Get the list of member addresses.
+        :return: <list> List of addresses
         """
-        if status:
-            return [member for member in self.members if member.get('status') == status]
-        return self.members
-
-    def get_requests(self, status=None):
-        """
-        Get the list of membership requests.
-        :param status: (Optional) <str> Status to filter requests by
-        :return: <list> List of membership requests
-        """
-        if status:
-            return [request['request'] for request in self.requests if request['request'].get('status') == status]
-        return [request['request'] for request in self.requests]
-
-    def add_member(self, name):
-        """
-        Manually add a member to the list of approved members.
-        :param name: <str> Name of the member
-        :return: <dict> Member object
-        """
-        public_key, private_key = self.generate_key_pair()
-        public_key_pem = self.serialize_public_key(public_key)
-        address = convert_to_ethereum_address(public_key_pem)
-        member = {'address': address, 'name': name}
-        self.members.append(member)
-        return member
+        return [member['address'] for member in self.members]
