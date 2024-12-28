@@ -3,6 +3,9 @@ This file handles transaction creation and validation.
 It defines the Transaction class which manages the creation and verification of transactions.
 """
 
+from time import time
+from proposal import Proposal
+
 
 class Transaction:
     def __init__(self, blockchain):
@@ -12,31 +15,44 @@ class Transaction:
         """
         self.blockchain = blockchain
         self.pending_transactions = []
+        self.proposal_validator = Proposal()
 
-    def create_transaction(self, sender, recipient, amount):
+    def create_transaction(self, sender, recipient=None, amount=None, type=None, proposal_details=None):
         """
         Creates a new transaction
         """
-        # Check if sender has permission to perform this type of transaction
-        if amount < 0:  # If borrowing
-            if not self.blockchain.membership.has_permission(sender, 'borrow_funds'):
+        if type == "submit_proposal":
+            if not self.blockchain.membership.has_permission(sender, 'submit_proposal'):
                 raise ValueError(
-                    "Sender does not have permission to borrow funds")
-        else:  # If lending
-            if not self.blockchain.membership.has_permission(sender, 'lend_funds'):
-                raise ValueError(
-                    "Sender does not have permission to lend funds")
+                    "Sender does not have permission to submit proposals")
 
-        # Verify both parties are registered members
-        if not self.blockchain.membership.get_member_by_address(sender) or \
-           not self.blockchain.membership.get_member_by_address(recipient):
-            raise ValueError("Sender or recipient is not a registered member")
+            # Validate proposal details
+            self.proposal_validator.validate_proposal(proposal_details)
 
-        transaction = {
-            'sender': sender,
-            'recipient': recipient,
-            'amount': amount,
-        }
+            transaction = {
+                'type': 'submit_proposal',
+                'sender': sender,
+                'proposal_details': proposal_details,
+                'timestamp': time()
+            }
+        else:
+            # Regular transaction validation
+            if amount < 0:  # If borrowing
+                if not self.blockchain.membership.has_permission(sender, 'borrow_funds'):
+                    raise ValueError(
+                        "Sender does not have permission to borrow funds")
+            else:  # If lending
+                if not self.blockchain.membership.has_permission(sender, 'lend_funds'):
+                    raise ValueError(
+                        "Sender does not have permission to lend funds")
+
+            transaction = {
+                'type': 'transfer',
+                'sender': sender,
+                'recipient': recipient,
+                'amount': amount,
+                'timestamp': time()
+            }
 
         self.pending_transactions.append(transaction)
         return transaction

@@ -43,20 +43,41 @@ def new_block():
 def new_transaction():
     values = request.get_json()
 
-    # Check that the required fields are in the POST'ed data
-    required = ['sender', 'recipient', 'amount']
-    if not all(k in values for k in required):
-        return 'Missing values', 400
+    # Debug print
+    print("Received values:", values)
+
+    # Check if we received any data
+    if not values:
+        return 'No data received', 400
+
+    # Check the required fields based on transaction type
+    if 'type' in values and values['type'] == 'submit_proposal':
+        required = ['type', 'sender', 'proposal_details']
+    else:
+        required = ['sender', 'recipient', 'amount']
+
+    # Check which required fields are missing
+    missing_fields = [field for field in required if field not in values]
+    if missing_fields:
+        return f'Missing required fields: {", ".join(missing_fields)}', 400
 
     try:
         # Create a new Transaction
-        index = blockchain.new_transaction(
-            values['sender'], values['recipient'], values['amount'])
-        response = {'message': f'Transaction will be added to Block {index}'}
-        return jsonify(response), 201
+        transaction = blockchain.transaction_manager.create_transaction(
+            sender=values['sender'],
+            recipient=values.get('recipient'),  # Optional for proposals
+            amount=values.get('amount'),        # Optional for proposals
+            type=values.get('type'),
+            proposal_details=values.get('proposal_details')
+        )
     except ValueError as e:
-        response = {'message': str(e)}
-        return jsonify(response), 400
+        return str(e), 400
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        return f"Server error: {str(e)}", 500
+
+    response = {'message': f'Transaction will be added to Block {transaction}'}
+    return jsonify(response), 201
 
 
 @app.route('/membership/add', methods=['POST'])
@@ -206,6 +227,18 @@ def vote_block():
 def get_pending_blocks():
     blocks = blockchain.consensus.get_pending_blocks()
     return jsonify({'pending_blocks': blocks}), 200
+
+
+@app.route('/transactions/pending', methods=['GET'])
+def get_pending_transactions():
+    """
+    Get all pending transactions that haven't been added to a block yet
+    """
+    pending_transactions = blockchain.transaction_manager.get_pending_transactions()
+    return jsonify({
+        'pending_transactions': pending_transactions,
+        'count': len(pending_transactions)
+    }), 200
 
 
 if __name__ == '__main__':

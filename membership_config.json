@@ -1,12 +1,10 @@
 {
     "member_categories": {
         "borrower": {
-            "description": "Can borrow funds and vote on membership",
+            "description": "Can borrow funds and submit proposals",
             "permissions": [
-                "vote_on_membership",
-                "propose_block",
-                "vote_on_block",
-                "borrow_funds"
+                "borrow_funds",
+                "submit_proposal"
             ]
         },
         "lender": {
@@ -18,6 +16,6 @@
             ]
         }
     },
-    "first_member_category": "borrower",
-    "voting_categories": ["borrower"]
+    "first_member_category": "lender",
+    "voting_categories": ["lender"]
 } 
