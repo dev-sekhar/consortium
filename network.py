@@ -18,11 +18,10 @@ app = Flask(__name__)
 # Generate a globally unique address for this node
 node_identifier = str(uuid4()).replace('-', '')
 
-# Instantiate the Blockchain
+# Initialize components properly to avoid circular dependency
 blockchain = Blockchain()
-
-# Instantiate the Membership with the same blockchain instance
 membership = Membership(blockchain)
+blockchain.set_membership(membership)
 
 
 @app.route('/block/new', methods=['GET'])
@@ -61,41 +60,43 @@ def new_transaction():
 
 
 @app.route('/membership/add', methods=['POST'])
-def add_member():
+def add_first_member():
     values = request.get_json()
-
-    # Check that the required field is in the POST'ed data
-    required = ['name']
+    required = ['name', 'role']
     if not all(k in values for k in required):
-        return 'Missing name', 400
+        return 'Missing values', 400
 
-    # Add the new member
-    member = membership.add_member(values['name'])
-
-    response = {
-        'message': 'Member added',
-        'member': member
-    }
-    return jsonify(response), 201
+    try:
+        member = blockchain.membership.add_first_member(
+            values['name'], values['role'])
+        response = {
+            'message': 'First member added',
+            'member': member
+        }
+        return jsonify(response), 201
+    except ValueError as e:
+        return str(e), 400
 
 
 @app.route('/membership/request', methods=['POST'])
 def request_membership():
     values = request.get_json()
-
-    # Check that the required field is in the POST'ed data
-    required = ['name']
+    required = ['name', 'role']
     if not all(k in values for k in required):
-        return 'Missing name', 400
+        return 'Missing values', 400
 
-    # Create a new membership request
-    membership_request = membership.request_membership(values['name'])
-
-    response = {
-        'message': 'Membership request created',
-        'request': membership_request
-    }
-    return jsonify(response), 201
+    try:
+        membership_request = blockchain.membership.request_membership(
+            values['name'],
+            values['role']
+        )
+        response = {
+            'message': 'Membership requested',
+            'request': membership_request
+        }
+        return jsonify(response), 201
+    except ValueError as e:
+        return str(e), 400
 
 
 @app.route('/membership/addresses', methods=['GET'])
@@ -121,15 +122,14 @@ def vote_for_member():
         return 'Missing values', 400
 
     try:
-        # Vote for the membership request
-        result = membership.vote_for_member(
-            values['request_address'], values['voter_address'], values['action'])
-        if result:
-            response = {'message': 'Vote recorded', 'request': result}
-            return jsonify(response), 200
-        else:
-            response = {'message': 'Invalid vote or request not found'}
-            return jsonify(response), 400
+        # Changed from vote_for_member to vote_on_request
+        result = membership.vote_on_request(
+            values['request_address'],
+            values['voter_address'],
+            values['action']
+        )
+        response = {'message': 'Vote recorded', 'request': result}
+        return jsonify(response), 200
     except Exception as e:
         app.logger.error(f"Error voting for member: {e}")
         return "Internal Server Error", 500

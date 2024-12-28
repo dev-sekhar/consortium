@@ -14,7 +14,7 @@ from transaction import Transaction
 class Blockchain:
     def __init__(self):
         self.chain = []
-        self.registered_members = []
+        self.membership = None  # Initialize as None first
         self.transaction_manager = Transaction(self)
         self.consensus = ProofOfVote()
         # Create the genesis block
@@ -31,6 +31,8 @@ class Blockchain:
     def new_block(self, previous_hash=None):
         """
         Create a new Block in the Blockchain
+        :param previous_hash: (Optional) <str> Hash of previous Block
+        :return: <dict> New Block
         """
         block = {
             'index': len(self.chain) + 1,
@@ -75,13 +77,11 @@ class Blockchain:
         """
         Propose a new block using the consensus mechanism
         """
-        if proposer not in self.registered_members:
-            raise ValueError("Only registered members can propose blocks")
-
         block = self.consensus.propose_block(
             self.chain,
             self.transaction_manager.get_pending_transactions(),
-            proposer
+            proposer,
+            self.membership
         )
         return block
 
@@ -92,17 +92,20 @@ class Blockchain:
         block, approved = self.consensus.vote_for_block(
             block_index,
             voter_address,
-            self.registered_members
+            self.membership
         )
 
         if approved:
-            # Add the approved block to the chain
             block['hash'] = self.hash(block)
             self.chain.append(block)
-            self.current_transactions = []
+            self.transaction_manager.clear_pending_transactions()
             self.consensus.remove_block(block)
 
         return block
+
+    def set_membership(self, membership):
+        """Set the membership instance after initialization"""
+        self.membership = membership
 
 
 class Membership:

@@ -3,6 +3,10 @@ This file handles membership requests and voting.
 It defines the Membership class which manages membership requests and the list of members.
 """
 
+import json
+from eth_utils import to_checksum_address
+from cryptography.hazmat.primitives import hashes
+import os
 from blockchain import Blockchain
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
@@ -12,9 +16,21 @@ from convert_to_ethereum_address import convert_to_ethereum_address
 
 class Membership:
     def __init__(self, blockchain):
+        """
+        Initialize with blockchain reference
+        """
         self.blockchain = blockchain
         self.members = []
-        self.requests = []
+        self.pending_requests = []
+        self.rejected_requests = []
+        self.config = self._load_config()
+
+    def _load_config(self):
+        """
+        Load membership configuration from JSON file
+        """
+        with open('membership_config.json', 'r') as f:
+            return json.load(f)
 
     def generate_key_pair(self):
         """
@@ -41,66 +57,111 @@ class Membership:
         )
         return pem.decode('utf-8')
 
-    def add_member(self, name):
+    def add_first_member(self, name, role):
         """
-        Manually add a member to the list of approved members.
-        :param name: <str> Name of the member
-        :return: <dict> Member object
+        Add the first member without voting
         """
-        public_key, private_key = self.generate_key_pair()
-        public_key_pem = self.serialize_public_key(public_key)
-        address = convert_to_ethereum_address(public_key_pem)
-        member = {'address': address, 'name': name}
+        if role != self.config['first_member_category']:
+            raise ValueError(f"First member must be a {
+                             self.config['first_member_category']}")
+
+        if self.members:
+            raise ValueError("First member already exists")
+
+        if role not in self.config['member_categories']:
+            raise ValueError(f"Invalid role. Must be one of: {
+                             list(self.config['member_categories'].keys())}")
+
+        address = self._generate_address()
+        member = {
+            'name': name,
+            'address': address,
+            'role': role,
+            'status': 'approved'
+        }
         self.members.append(member)
-        # Register the member in the blockchain
-        self.blockchain.register_member(address)
         return member
 
-    def request_membership(self, name):
+    def request_membership(self, name, role):
         """
-        Create a new membership request.
-        :param name: <str> Name of the requesting member
-        :return: <dict> Membership request
+        Request new membership
+        """
+        if role not in self.config['member_categories']:
+            raise ValueError(f"Invalid role. Must be one of: {
+                             list(self.config['member_categories'].keys())}")
+
+        address = self._generate_address()
+        request = {
+            'name': name,
+            'address': address,
+            'role': role,
+            'status': 'pending'
+        }
+        self.pending_requests.append(request)
+        return request
+
+    def vote_on_request(self, request_address, voter_address, action):
+        """
+        Vote on a membership request
+        """
+        # Verify voter has voting permission
+        voter = self.get_member_by_address(voter_address)
+        if not voter or voter['role'] not in self.config['voting_categories']:
+            raise ValueError(f"Only {', '.join(
+                self.config['voting_categories'])} can vote on membership requests")
+
+        request = self._find_request(request_address)
+        if not request:
+            raise ValueError("Request not found")
+
+        if action == 'approve':
+            self.members.append(request)
+            self.pending_requests.remove(request)
+            request['status'] = 'approved'
+        elif action == 'reject':
+            self.rejected_requests.append(request)
+            self.pending_requests.remove(request)
+            request['status'] = 'rejected'
+        else:
+            raise ValueError("Invalid action")
+
+        return request
+
+    def has_permission(self, address, permission):
+        """
+        Check if a member has a specific permission
+        """
+        member = self.get_member_by_address(address)
+        if not member:
+            return False
+
+        member_permissions = self.config['member_categories'][member['role']]['permissions']
+        return permission in member_permissions
+
+    def _generate_address(self):
+        """
+        Generate a new Ethereum address
         """
         public_key, private_key = self.generate_key_pair()
         public_key_pem = self.serialize_public_key(public_key)
-        address = convert_to_ethereum_address(public_key_pem)
-        request = {
-            'address': address,
-            'name': name,
-            'status': 'Pending',
-            'votes': 0,
-            'rejections': 0,
-            'voters': []
-        }
-        self.requests.append({'request': request, 'private_key': private_key})
-        return request
+        return convert_to_ethereum_address(public_key_pem)
 
-    def vote_for_member(self, request_address, voter_address, action):
+    def _find_request(self, request_address):
         """
-        Vote for a membership request.
-        :param request_address: <str> Address of the membership request
-        :param voter_address: <str> Address of the voter
-        :param action: <str> 'approve' or 'reject'
-        :return: <dict> Updated membership request
+        Find a membership request by address
         """
-        for request in self.requests:
-            if request['request']['address'] == request_address:
-                if voter_address not in request['request']['voters']:
-                    request['request']['voters'].append(voter_address)
-                    if action == 'approve':
-                        request['request']['votes'] += 1
-                        if request['request']['votes'] >= (len(self.members) // 2) + 1:
-                            request['request']['status'] = 'Approved'
-                            self.members.append(
-                                {'address': request['request']['address'], 'name': request['request']['name']})
-                            self.blockchain.register_member(
-                                request['request']['address'])
-                    elif action == 'reject':
-                        request['request']['rejections'] += 1
-                        if request['request']['rejections'] >= (len(self.members) // 2) + 1:
-                            request['request']['status'] = 'Rejected'
-                    return request['request']
+        for request in self.pending_requests:
+            if request['address'] == request_address:
+                return request
+        return None
+
+    def get_member_by_address(self, address):
+        """
+        Get a member by address
+        """
+        for member in self.members:
+            if member['address'] == address:
+                return member
         return None
 
     def get_addresses(self):

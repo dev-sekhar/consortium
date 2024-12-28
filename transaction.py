@@ -16,17 +16,22 @@ class Transaction:
     def create_transaction(self, sender, recipient, amount):
         """
         Creates a new transaction
-        :param sender: <str> Address of the Sender
-        :param recipient: <str> Address of the Recipient
-        :param amount: <int> Amount
-        :return: <dict> Created transaction
         """
-        # Verify both sender and recipient are registered members
-        if sender not in self.blockchain.registered_members or \
-           recipient not in self.blockchain.registered_members:
+        # Check if sender has permission to perform this type of transaction
+        if amount < 0:  # If borrowing
+            if not self.blockchain.membership.has_permission(sender, 'borrow_funds'):
+                raise ValueError(
+                    "Sender does not have permission to borrow funds")
+        else:  # If lending
+            if not self.blockchain.membership.has_permission(sender, 'lend_funds'):
+                raise ValueError(
+                    "Sender does not have permission to lend funds")
+
+        # Verify both parties are registered members
+        if not self.blockchain.membership.get_member_by_address(sender) or \
+           not self.blockchain.membership.get_member_by_address(recipient):
             raise ValueError("Sender or recipient is not a registered member")
 
-        # Create the transaction
         transaction = {
             'sender': sender,
             'recipient': recipient,
