@@ -1,0 +1,38 @@
+{
+    "currencies": {
+        "allowed": ["USD", "EUR", "GBP", "JPY"],
+        "default": "USD"
+    },
+    "validation_rules": {
+        "title": {
+            "min_length": 5,
+            "max_length": 100
+        },
+        "description": {
+            "min_length": 50,
+            "max_length": 5000
+        },
+        "objective": {
+            "min_length": 50,
+            "max_length": 1000
+        },
+        "success_criteria": {
+            "min_count": 3
+        },
+        "funding": {
+            "min_amount": 1000,
+            "max_amount": 10000000
+        }
+    },
+    "durations": {
+        "allowed_units": ["months", "years"],
+        "min_duration": "1 month",
+        "max_duration": "5 years"
+    },
+    "url_patterns": {
+        "documentation": {
+            "allowed_protocols": ["http", "https"],
+            "allowed_domains": [".com", ".org", ".net", ".edu", ".gov"]
+        }
+    }
+} 

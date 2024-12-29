@@ -6,6 +6,7 @@ It defines endpoints for creating new transactions, retrieving the blockchain, a
 import logging
 import argparse
 import socket
+import json
 from flask import Flask, jsonify, request
 from uuid import uuid4
 from blockchain import Blockchain
@@ -15,6 +16,10 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 import requests
+
+# Load network configuration
+with open('network_config.json', 'r') as config_file:
+    network_config = json.load(config_file)
 
 
 def is_port_in_use(port):
@@ -26,8 +31,9 @@ def is_port_in_use(port):
 def verify_member_authorization(address):
     """Verify if the member is authorized to connect to the network"""
     try:
-        # Try to connect to the main node
-        response = requests.get(f'http://localhost:5000/membership/members')
+        main_port = network_config['main_node']['port']
+        endpoint = network_config['endpoints']['membership']
+        response = requests.get(f'http://localhost:{main_port}{endpoint}')
         if response.status_code == 200:
             members = response.json().get('members', [])
             return any(member['address'] == address for member in members)
@@ -42,26 +48,25 @@ def create_app(port, member_address=None):
     # Generate a globally unique address for this node
     node_identifier = str(uuid4()).replace('-', '')
 
-    # For port 5000 (main node), initialize new blockchain
-    # For other ports, connect to existing network
-    if port == 5000:
-        if is_port_in_use(5000):
-            raise ValueError(
-                "Port 5000 is already in use. Only one main node can run on port 5000.")
+    main_port = network_config['main_node']['port']
+
+    if port == main_port:
+        if is_port_in_use(main_port):
+            raise ValueError(f"Port {
+                             main_port} is already in use. Only one main node can run on port {main_port}.")
 
         blockchain = Blockchain()
         membership = Membership(blockchain)
         blockchain.set_membership(membership)
         logger.info(f"Initialized main node on port {port}")
     else:
-        if not member_address:
+        if network_config['authorization']['require_member_address'] and not member_address:
             raise ValueError("Member address is required for non-main nodes")
 
-        if not verify_member_authorization(member_address):
+        if network_config['authorization']['verify_membership'] and not verify_member_authorization(member_address):
             raise ValueError(
                 "Unauthorized member. Only registered members can connect to the network.")
 
-        # Connect to existing network
         blockchain = Blockchain()
         membership = Membership(blockchain)
         blockchain.set_membership(membership)
@@ -279,13 +284,56 @@ def create_app(port, member_address=None):
             'count': len(pending_transactions)
         }), 200
 
+    @app.route('/proposals', methods=['GET'])
+    def get_proposals():
+        """
+        Get proposals with optional status filter
+        Status options: pending, approved, rejected
+        """
+        status = request.args.get('status')
+        pending_transactions = blockchain.transaction_manager.get_pending_transactions()
+
+        # Get all proposal transactions
+        proposals = [
+            transaction for transaction in pending_transactions
+            if transaction.get('type') == 'submit_proposal'
+        ]
+
+        if status:
+            # Filter proposals by status
+            if status.lower() == 'pending':
+                filtered_proposals = [
+                    proposal for proposal in proposals
+                    if proposal['proposal_details'].get('status', 'Pending') == 'Pending'
+                ]
+            elif status.lower() == 'approved':
+                filtered_proposals = [
+                    proposal for proposal in proposals
+                    if proposal['proposal_details'].get('status') == 'Approved'
+                ]
+            elif status.lower() == 'rejected':
+                filtered_proposals = [
+                    proposal for proposal in proposals
+                    if proposal['proposal_details'].get('status') == 'Rejected'
+                ]
+            else:
+                filtered_proposals = proposals
+        else:
+            filtered_proposals = proposals
+
+        return jsonify({
+            'proposals': filtered_proposals,
+            'count': len(filtered_proposals)
+        }), 200
+
     return app
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Start the blockchain node.')
-    parser.add_argument('-p', '--port', type=int, default=5000,
-                        help='Port to run the server on (default: 5000)')
+    parser.add_argument('-p', '--port', type=int,
+                        default=network_config['main_node']['port'],
+                        help=f'Port to run the server on (default: {network_config["main_node"]["port"]})')
     parser.add_argument('-a', '--address', type=str,
                         help='Member address (required for non-main nodes)')
 
@@ -293,9 +341,9 @@ if __name__ == '__main__':
 
     # Configure logging
     logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        level=getattr(logging, network_config['logging']['level']),
+        format=network_config['logging']['format'],
+        datefmt=network_config['logging']['date_format']
     )
 
     logger = logging.getLogger(__name__)
@@ -303,7 +351,10 @@ if __name__ == '__main__':
     try:
         app = create_app(args.port, args.address)
         logger.info(f'Starting blockchain node on port {args.port}')
-        app.run(host='0.0.0.0', port=args.port)
+        app.run(
+            host=network_config['main_node']['host'],
+            port=args.port
+        )
     except ValueError as e:
         logger.error(str(e))
         exit(1)

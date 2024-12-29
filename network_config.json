@@ -1,0 +1,25 @@
+{
+    "main_node": {
+        "port": 5000,
+        "host": "0.0.0.0"
+    },
+    "member_nodes": {
+        "min_port": 5001,
+        "max_port": 5999
+    },
+    "authorization": {
+        "require_member_address": true,
+        "verify_membership": true
+    },
+    "endpoints": {
+        "membership": "/membership/members",
+        "proposals": "/proposals",
+        "transactions": "/transactions/new",
+        "chain": "/chain"
+    },
+    "logging": {
+        "level": "INFO",
+        "format": "%(asctime)s - %(levelname)s - %(message)s",
+        "date_format": "%Y-%m-%d %H:%M:%S"
+    }
+} 
