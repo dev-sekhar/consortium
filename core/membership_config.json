@@ -1,0 +1,15 @@
+{
+    "roles": {
+        "allowed": ["lender", "borrower", "reviewer"],
+        "default": "borrower"
+    },
+    "voting": {
+        "min_votes_required": 1,
+        "approval_threshold": 0.51
+    },
+    "permissions": {
+        "lender": ["vote", "lend_funds"],
+        "borrower": ["submit_proposal", "borrow_funds"],
+        "reviewer": ["review_proposal", "vote"]
+    }
+} 

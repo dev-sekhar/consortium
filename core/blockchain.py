@@ -6,54 +6,64 @@ It defines the Blockchain class which manages the chain of blocks and transactio
 import hashlib
 import json
 from time import time
-from convert_to_ethereum_address import convert_to_ethereum_address
-from consensus import ProofOfVote
-from transaction import Transaction
+from uuid import uuid4
+from datetime import datetime
+from decimal import Decimal
+from utilities.convert_to_ethereum_address import generate_ethereum_address, validate_ethereum_address
+from .consensus import Consensus
 
 
 class Blockchain:
     def __init__(self):
         self.chain = []
-        self.membership = None  # Initialize as None first
-        self.transaction_manager = Transaction(self)
-        self.consensus = ProofOfVote()
+        self.current_transactions = []
+        self.nodes = set()
+        self.consensus = Consensus()
+
         # Create the genesis block
-        self.new_block(previous_hash='1')
+        self.new_block(previous_hash='1', proof=100)
 
-    def new_transaction(self, sender, recipient, amount):
-        """
-        Creates a new transaction to go into the next mined Block
-        """
-        transaction = self.transaction_manager.create_transaction(
-            sender, recipient, amount)
-        return self.last_block['index'] + 1
-
-    def new_block(self, previous_hash=None):
-        """
-        Create a new Block in the Blockchain
-        :param previous_hash: (Optional) <str> Hash of previous Block
-        :return: <dict> New Block
-        """
+    def new_block(self, proof, previous_hash):
+        """Create a new block in the blockchain"""
         block = {
             'index': len(self.chain) + 1,
             'timestamp': time(),
-            'transactions': self.transaction_manager.get_pending_transactions(),
-            'previous_hash': previous_hash or self.hash(self.chain[-1]),
+            'transactions': self.current_transactions,
+            'proof': proof,
+            'previous_hash': previous_hash or self.hash(self.chain[-1])
         }
 
-        # Calculate block hash immediately
-        block['hash'] = self.hash(block)
-
-        # Clear pending transactions
-        self.transaction_manager.clear_pending_transactions()
+        # Reset the current list of transactions
+        self.current_transactions = []
 
         self.chain.append(block)
         return block
 
-    def register_member(self, address):
-        """Register a new member address"""
-        if address not in self.registered_members:
-            self.registered_members.append(address)
+    def new_transaction(self, sender, recipient, data):
+        """Add a new transaction to the list of transactions"""
+        if not validate_ethereum_address(sender):
+            raise ValueError("Invalid sender address")
+        if recipient and not validate_ethereum_address(recipient):
+            raise ValueError("Invalid recipient address")
+
+        transaction = {
+            'sender': sender,
+            'recipient': recipient,
+            'data': data,
+            'timestamp': datetime.utcnow().isoformat(),
+            'transaction_id': str(uuid4())
+        }
+
+        self.current_transactions.append(transaction)
+        return transaction
+
+    def register_node(self, address):
+        """Add a new node to the set of nodes"""
+        self.nodes.add(address)
+
+    def set_membership(self, membership):
+        """Set the membership handler"""
+        self.membership = membership
 
     @staticmethod
     def hash(block):
@@ -103,10 +113,6 @@ class Blockchain:
 
         return block
 
-    def set_membership(self, membership):
-        """Set the membership instance after initialization"""
-        self.membership = membership
-
 
 class Membership:
     def __init__(self):
@@ -121,7 +127,7 @@ class Membership:
         """
         public_key, private_key = self.generate_key_pair()
         public_key_pem = self.serialize_public_key(public_key)
-        address = convert_to_ethereum_address(public_key_pem)
+        address = generate_ethereum_address(public_key_pem)
         member = {'address': address, 'name': name}
         self.members.append(member)
         # Register the member in the blockchain

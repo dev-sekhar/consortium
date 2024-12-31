@@ -4,7 +4,7 @@ It defines the Transaction class which manages the creation and verification of 
 """
 
 from time import time
-from proposal import Proposal
+from use_case.proposal import Proposal
 
 
 class Transaction:
