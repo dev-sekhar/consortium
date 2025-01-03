@@ -7,11 +7,15 @@ from .voting import Voting
 from .funding import Funding
 from .agreement import Agreement
 from utilities.convert_to_ethereum_address import generate_ethereum_address
+from use_case.smart_contracts.member_auto_reject import MemberAutoRejectContract
 
 api = Blueprint('api', __name__)
 blockchain = Blockchain()
 membership = Membership(blockchain)
 blockchain.set_membership(membership)
+
+# Initialize auto-reject contract
+auto_reject_contract = MemberAutoRejectContract(membership)
 
 # Membership Routes
 
@@ -73,22 +77,94 @@ def get_membership_requests():
 
 
 @api.route('/membership/vote', methods=['POST'])
-def vote_on_membership():
-    values = request.get_json()
-    required = ['request_address', 'voter_address', 'action']
-    if not all(k in values for k in required):
-        return 'Missing values', 400
+def vote_on_request():
+    """Vote on a membership request"""
+    data = request.get_json()
 
-    result = membership.vote_on_request(
-        request_id=values['request_address'],
-        voter_address=values['voter_address'],
-        action=values['action']
-    )
-    response = {
-        'message': 'Vote recorded',
-        'request': result
-    }
-    return jsonify(response), 200
+    # Validate required fields
+    required_fields = ['request_id', 'voter_address', 'action']
+    if not all(field in data for field in required_fields):
+        return jsonify({
+            'error': 'Missing required fields',
+            'required_fields': required_fields
+        }), 400
+
+    try:
+        result = membership.vote_on_request(
+            request_id=data['request_id'],
+            voter_address=data['voter_address'],
+            action=data['action']
+        )
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@api.route('/membership/request/<request_id>/status', methods=['GET'])
+def get_request_status(request_id):
+    """Get the status of a specific membership request"""
+    try:
+        # Check in pending requests first
+        request = next(
+            (req for req in membership.get_pending_requests()
+             if req['request_id'] == request_id),
+            None
+        )
+
+        # If not in pending, check in rejected requests
+        if not request:
+            request = next(
+                (req for req in membership.get_rejected_requests()
+                 if req['request_id'] == request_id),
+                None
+            )
+
+        if not request:
+            return jsonify({
+                'error': 'Request not found',
+                'request_id': request_id
+            }), 404
+
+        # Get auto-reject status
+        status = auto_reject_contract.get_request_status(request_id)
+
+        # Combine request data with auto-reject status
+        response = {
+            'request_id': request_id,
+            'status': request['status'],
+            'name': request['name'],
+            'role': request['role'],
+            'address': request['address'],
+            'timestamp': request['timestamp'],
+            'reminder_sent': request.get('reminder_sent', False),
+            'reminder_time': request.get('reminder_time'),
+            'auto_reject_info': status
+        }
+
+        if 'update_time' in request:
+            response['update_time'] = request['update_time']
+        if 'update_reason' in request:
+            response['update_reason'] = request['update_reason']
+
+        return jsonify(response), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@api.route('/membership/debug/requests', methods=['GET'])
+def debug_requests():
+    """Debug endpoint to see all requests in the system"""
+    return jsonify({
+        'pending': membership.get_pending_requests(),
+        'active': membership.get_members(),
+        'rejected': membership.get_rejected_requests(),
+        'total_count': {
+            'pending': len(membership.get_pending_requests()),
+            'active': len(membership.get_members()),
+            'rejected': len(membership.get_rejected_requests())
+        }
+    }), 200
 
 # Existing Proposal Routes
 

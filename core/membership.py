@@ -7,6 +7,7 @@ import json
 import time
 from uuid import uuid4
 from datetime import datetime
+from typing import List, Dict, Any
 
 from utilities.convert_to_ethereum_address import generate_ethereum_address, validate_ethereum_address
 
@@ -16,6 +17,7 @@ class Membership:
         self.blockchain = blockchain
         self.members = []
         self.pending_requests = []
+        self.rejected_requests = []
 
         # Load configuration
         with open('core/membership_config.json', 'r') as config_file:
@@ -224,6 +226,44 @@ class Membership:
             return [member for member in self.members if member['status'] == status]
         return self.members
 
-    def get_pending_requests(self):
+    def get_pending_requests(self) -> List[Dict[str, Any]]:
         """Get all pending membership requests"""
         return self.pending_requests
+
+    def get_rejected_requests(self) -> List[Dict[str, Any]]:
+        """Get all rejected membership requests"""
+        return self.rejected_requests
+
+    def update_request_status(self, request_id: str, status: str, reason: str = None) -> bool:
+        """
+        Update the status of a membership request
+
+        Args:
+            request_id: The ID of the request to update
+            status: New status ('approved', 'rejected')
+            reason: Optional reason for the status change
+
+        Returns:
+            bool: True if update was successful, False otherwise
+        """
+        # Find request in pending requests
+        request = next(
+            (req for req in self.pending_requests if req['request_id'] == request_id),
+            None
+        )
+
+        if not request:
+            return False
+
+        # Update request status
+        request['status'] = status
+        request['update_time'] = datetime.utcnow().isoformat()
+        if reason:
+            request['update_reason'] = reason
+
+        # Move to appropriate list based on status
+        if status == 'rejected':
+            self.pending_requests.remove(request)
+            self.rejected_requests.append(request)
+
+        return True

@@ -1,0 +1,49 @@
+{
+    "membership": {
+        "request": {
+            "auto_reject": {
+                "enabled": true,
+                "timeout": {
+                    "value": 3,
+                    "unit": "minutes"
+                },
+                "reminder": {
+                    "value": 2,
+                    "unit": "minutes"
+                }
+            }
+        },
+        "voting": {
+            "timeout": {
+                "value": 72,
+                "unit": "hours"
+            },
+            "reminder": {
+                "value": 48,
+                "unit": "hours"
+            }
+        }
+    },
+    "loan": {
+        "request": {
+            "expiry": {
+                "value": 168,
+                "unit": "hours"
+            },
+            "reminder": {
+                "value": 24,
+                "unit": "hours"
+            }
+        },
+        "repayment": {
+            "grace_period": {
+                "value": 24,
+                "unit": "hours"
+            },
+            "reminder": {
+                "value": 30,
+                "unit": "minutes"
+            }
+        }
+    }
+} 
