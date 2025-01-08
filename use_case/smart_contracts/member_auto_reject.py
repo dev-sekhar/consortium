@@ -97,7 +97,7 @@ class MemberAutoRejectContract:
         """
         Continuously monitor pending requests for timing conditions.
         """
-        print("Starting monitoring thread...")  # Debug log
+        print("Starting monitoring thread...")  # Initial startup message
 
         while True:
             try:
@@ -107,11 +107,17 @@ class MemberAutoRejectContract:
 
                 current_time = datetime.utcnow()
                 pending_requests = self.membership.get_pending_requests()
-                print(f"Checking {len(pending_requests)
-                                  } pending requests at {current_time}")
+
+                # Only log if there are pending requests
+                if pending_requests:
+                    print(f"Checking {len(pending_requests)
+                                      } pending requests at {current_time}")
 
                 for request in pending_requests:
-                    request_time = datetime.fromisoformat(request['timestamp'])
+                    # Convert Unix timestamp to string for fromisoformat
+                    request_time_str = datetime.fromtimestamp(
+                        request['timestamp']).isoformat()
+                    request_time = datetime.fromisoformat(request_time_str)
 
                     # Calculate timing thresholds
                     auto_reject_time = request_time + self._convert_to_timedelta(
@@ -127,10 +133,6 @@ class MemberAutoRejectContract:
                                       current_time).total_seconds()
                     time_to_reminder = (
                         reminder_time - current_time).total_seconds()
-
-                    print(f"Request {request['request_id']}:")
-                    print(f"  Time to reminder: {time_to_reminder} seconds")
-                    print(f"  Time to reject: {time_to_reject} seconds")
 
                     # Check if reminder should be sent
                     if time_to_reminder <= 0 and not request.get('reminder_sent'):

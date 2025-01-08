@@ -1,15 +1,65 @@
-from core.network import create_app
-import logging
+from core.network import Network
+from utilities.convert_to_ethereum_address import generate_ethereum_address
+import threading
+import time
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+
+def setup_first_lender(network):
+    """Create the first lender based on user input"""
+    try:
+        print("\nNo members found. Setting up the first lender...")
+        name = input("Enter the name for the first lender: ")
+
+        # Create first lender with active status directly
+        first_lender = {
+            'address': generate_ethereum_address(),
+            'name': name,
+            'role': "lender",
+            'status': 'active',
+            'timestamp': int(time.time())
+        }
+
+        # Add to blockchain members directly
+        network.blockchain.members = [first_lender]
+        print(f"First lender created successfully: {first_lender}")
+
+        # Add transaction to pending pool
+        network.blockchain.add_transaction({
+            'type': 'member_added',
+            'member': first_lender,
+            'timestamp': first_lender['timestamp']
+        })
+
+        return first_lender
+
+    except Exception as e:
+        print(f"Error setting up first lender: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise
+
+
+def main():
+    try:
+        # Create network instance
+        network = Network()
+
+        # Check if any members exist
+        if not network.blockchain.members:
+            setup_first_lender(network)
+        else:
+            print(f"\nFound existing members: {
+                  len(network.blockchain.members)}")
+
+        # Start Flask app
+        network.app.run(debug=False, use_reloader=False)
+
+    except Exception as e:
+        print(f"Error in main: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise
+
 
 if __name__ == "__main__":
-    try:
-        app = create_app(5000)
-        logger.info("Starting server on port 5000...")
-        # Added debug=True to see more information
-        app.run(host='0.0.0.0', port=5000, debug=True)
-    except Exception as e:
-        logger.error(f"Error starting server: {str(e)}")
+    main()

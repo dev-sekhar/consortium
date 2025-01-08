@@ -31,23 +31,22 @@ class Proposal:
             'documentation_url': str       # URL to additional documentation
         }
         self.allowed_currencies = self.config['currencies']['allowed']
+        self.proposals = []  # Initialize empty list to store proposals
 
-    def submit_proposal(self, proposal_data):
+    def submit_proposal(self, data):
         """Submit a new proposal"""
-        try:
-            if self.validate_proposal(proposal_data):
-                proposal_data['proposal_id'] = str(uuid4())
-                proposal_data['status'] = 'pending'
-                proposal_data['created_at'] = datetime.utcnow().isoformat()
-                return {'status': 'success', 'proposal': proposal_data}, 201
-        except ValueError as e:
-            return {'status': 'error', 'message': str(e)}, 400
+        proposal = {
+            **data,
+            'proposal_id': str(uuid4()),
+            'status': 'pending',
+            'created_at': datetime.now().isoformat()
+        }
+        self.proposals.append(proposal)  # Add to proposals list
+        return proposal
 
-    def get_proposals(self, status=None):
-        """Get proposals with optional status filter"""
-        # This would typically fetch from blockchain/database
-        # Placeholder for demonstration
-        return {'status': 'success', 'proposals': []}, 200
+    def get_proposals(self):
+        """Get all proposals"""
+        return self.proposals  # Return the list of proposals
 
     def validate_proposal(self, proposal_details):
         """

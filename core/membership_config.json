@@ -1,6 +1,6 @@
 {
     "roles": {
-        "allowed": ["lender", "borrower", "reviewer"],
+        "allowed": ["lender", "borrower"],
         "default": "borrower"
     },
     "voting": {

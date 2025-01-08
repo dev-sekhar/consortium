@@ -3,267 +3,347 @@ This file handles membership requests and voting.
 It defines the Membership class which manages membership requests and the list of members.
 """
 
-import json
+from typing import Dict, Any, List
+import time as timestamp  # Ensure this import is present
+from core.blockchain import Blockchain
+from eth_account import Account
+from .membership_voting import MembershipVoting
 import time
-from uuid import uuid4
 from datetime import datetime
-from typing import List, Dict, Any
-
 from utilities.convert_to_ethereum_address import generate_ethereum_address, validate_ethereum_address
 
 
 class Membership:
     def __init__(self, blockchain):
+        """Initialize membership storage"""
         self.blockchain = blockchain
-        self.members = []
+        self.voting = MembershipVoting()
         self.pending_requests = []
         self.rejected_requests = []
+        self.members = []
+        self.request_timeout = 30  # 30 seconds timeout for pending requests
 
-        # Load configuration
-        with open('core/membership_config.json', 'r') as config_file:
-            self.config = json.load(config_file)
+    def add_member(self, name, role):
+        """Add a new member pending consensus"""
+        try:
+            print(f"\nAdding new member in Membership class:")
+            print(f"Name: {name}")
+            print(f"Role: {role}")
 
-        # Load existing members from blockchain
-        self._load_from_blockchain()
-
-    def _load_from_blockchain(self):
-        """Load members and requests from blockchain"""
-        for block in self.blockchain.chain:
-            for transaction in block['transactions']:
-                if transaction['data']['type'] == 'member_added':
-                    member = transaction['data']['member']
-                    if member not in self.members:
-                        self.members.append(member)
-                elif transaction['data']['type'] == 'membership_requested':
-                    request = transaction['data']['request']
-                    if request not in self.pending_requests:
-                        self.pending_requests.append(request)
-
-    def add_member(self, member_data):
-        """Add a new member directly (for first member/genesis)"""
-        # Generate Ethereum address for first member
-        eth_address = generate_ethereum_address()
-        member_data['address'] = eth_address['address']
-
-        if not validate_ethereum_address(member_data['address']):
-            raise ValueError("Invalid Ethereum address")
-
-        member = {
-            'member_id': str(uuid4()),
-            'address': member_data['address'],
-            'name': member_data['name'],
-            'role': member_data['role'],
-            'joined_date': datetime.utcnow().isoformat(),
-            'status': 'active'
-        }
-
-        # Add to blockchain first
-        self.blockchain.new_transaction(
-            sender=member['address'],
-            recipient=member['address'],
-            data={
-                'type': 'member_added',
-                'member': member
+            # Create member with pending status
+            member = {
+                'address': generate_ethereum_address(),
+                'name': name,
+                'role': role,
+                'status': 'pending',
+                'timestamp': int(time.time())
             }
-        )
 
-        # Add to members list
-        self.members.append(member)
+            print(f"Generated address: {member['address']}")
 
-        # Return both member info and private key
-        return {
-            'member': member,
-            'private_key': eth_address['private_key']
-        }
+            # Validate the generated address
+            if not validate_ethereum_address(member['address']):
+                raise ValueError(f"Invalid Ethereum address generated: {
+                                 member['address']}")
 
-    def request_membership(self, request_data):
-        """Request to join the consortium"""
-        eth_address = generate_ethereum_address()
+            # Add to blockchain members list
+            if self.blockchain and hasattr(self.blockchain, 'members'):
+                print("Adding member to blockchain members list")
+                self.blockchain.members.append(member)
+            else:
+                raise ValueError(
+                    "Blockchain or members list not properly initialized")
 
-        request = {
-            'request_id': str(uuid4()),
-            'address': eth_address['address'],
-            'name': request_data['name'],
-            'role': request_data['role'],
-            'status': 'pending',
-            'timestamp': datetime.utcnow().isoformat(),
-            'votes': []
-        }
+            print(f"Current blockchain members: {self.blockchain.members}")
 
-        # Add to blockchain first
-        self.blockchain.new_transaction(
-            sender=request['address'],
-            recipient=None,
-            data={
-                'type': 'membership_requested',
-                'request': request
-            }
-        )
+            return member
 
-        # Add to pending requests
-        self.pending_requests.append(request)
+        except Exception as e:
+            print(f"Error in Membership.add_member: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            raise
 
-        return {
-            'request': request,
-            'private_key': eth_address['private_key']
-        }
+    def approve_member(self, member_address, approver_address):
+        """Cast a vote to approve a member"""
+        try:
+            # Debug logging
+            print(f"\nApproving member:")
+            print(f"Member address: {member_address}")
+            print(f"Approver address: {approver_address}")
 
-    def vote_on_request(self, request_id, voter_address, action):
-        """Vote on a membership request"""
-        # Check if voter is a member and is a lender
-        voter = self.get_member(voter_address)
-        if not voter:
-            raise ValueError("Only members can vote")
-        if voter['role'] != 'lender':
-            raise ValueError("Only lenders can vote")
+            # Verify approver is an active lender
+            if not self.is_active_lender(approver_address):
+                raise ValueError("Only active lenders can vote")
 
-        request = next(
-            (req for req in self.pending_requests if req['request_id'] == request_id),
-            None
-        )
+            # Get the pending member
+            members = self.get_members()
+            print(f"\nCurrent members: {members}")  # Debug log
 
-        if not request:
-            raise ValueError("Request not found")
+            pending_member = None
+            for member in members['pending']:
+                if member['address'] == member_address:
+                    pending_member = member
+                    break
 
-        if any(vote['voter'] == voter_address for vote in request['votes']):
-            raise ValueError("Already voted on this request")
+            if not pending_member:
+                raise ValueError(f"No pending request found for address: {
+                                 member_address}")
 
-        # Get total number of active lenders who can vote
-        total_active_lenders = len(
-            [m for m in self.members if m['status'] == 'active' and m['role'] == 'lender'])
+            # Calculate required votes (51% of active lenders)
+            active_lenders = [m for m in members['active']
+                              if m['role'] == 'lender']
+            required_votes = (len(active_lenders) // 2) + 1
 
-        vote = {
-            'voter': voter_address,
-            'action': action,
-            'timestamp': datetime.utcnow().isoformat()
-        }
+            # For now, with single vote approval
+            pending_member['status'] = 'active'
+            pending_member['approved_at'] = int(time.time())
 
-        request['votes'].append(vote)
+            # Update the member in blockchain
+            self.blockchain.update_member(pending_member)
 
-        # Add vote to blockchain
-        self.blockchain.new_transaction(
-            sender=voter_address,
-            recipient=request['address'],
-            data={
-                'type': 'membership_vote',
-                'vote': vote,
-                'request_id': request_id
-            }
-        )
+            return pending_member
 
-        # Count votes
-        approve_votes = sum(
-            1 for vote in request['votes'] if vote['action'] == 'approve')
-        reject_votes = sum(
-            1 for vote in request['votes'] if vote['action'] == 'reject')
+        except Exception as e:
+            import traceback
+            print(f"\nError in approve_member:")
+            print(traceback.format_exc())
+            raise
 
-        # Calculate required votes based on total lenders
-        required_votes = max(
-            1, int(total_active_lenders * self.config['voting']['approval_threshold']))
+    def is_active_lender(self, address):
+        """Check if address belongs to an active lender"""
+        members = self.get_members()
+        # Debug logging
+        print(f"\nChecking active lender status:")
+        print(f"Address to check: {address}")
+        print(f"Active members: {members['active']}")
 
-        # Check if enough votes to make a decision
-        if approve_votes >= required_votes:
-            # Add as member
-            new_member = {
-                'member_id': str(uuid4()),
-                'address': request['address'],
-                'name': request['name'],
-                'role': request['role'],
-                'joined_date': datetime.utcnow().isoformat(),
-                'status': 'active'
-            }
-            self.members.append(new_member)
+        # Make sure we're working with the list of active members
+        active_members = members.get('active', [])
+        if not isinstance(active_members, list):
+            print(f"Warning: active_members is not a list: {
+                  type(active_members)}")
+            return False
 
-            # Add to blockchain
-            self.blockchain.new_transaction(
-                sender=voter_address,
-                recipient=request['address'],
-                data={
-                    'type': 'member_added',
-                    'member': new_member
-                }
-            )
+        # Check if the address belongs to an active lender
+        for member in active_members:
+            if isinstance(member, dict):  # Ensure we're working with a dictionary
+                if member.get('address') == address and member.get('role') == 'lender':
+                    print(f"Found active lender: {member.get('name')}")
+                    return True
 
-            # Remove from pending
-            self.pending_requests.remove(request)
+        print("No matching active lender found")
+        return False
 
-        elif reject_votes >= required_votes:
-            # Add rejection to blockchain
-            self.blockchain.new_transaction(
-                sender=voter_address,
-                recipient=request['address'],
-                data={
-                    'type': 'membership_rejected',
-                    'request': request
-                }
-            )
+    def is_pending_member(self, address):
+        """Check if address belongs to a pending member"""
+        pending = self.get_pending_requests()
+        return any(m['address'] == address for m in pending)
 
-            # Remove from pending
-            self.pending_requests.remove(request)
+    def get_pending_member(self, address):
+        """Get a pending member by address"""
+        pending = self.get_pending_requests()
+        return next((m for m in pending if m['address'] == address), None)
 
-        return {
-            'request': request,
-            'total_lenders': total_active_lenders,
-            'required_votes': required_votes,
-            'current_approve_votes': approve_votes,
-            'current_reject_votes': reject_votes
-        }
+    def reject_member(self, member_address, approver_address):
+        """Reject a pending member"""
+        try:
+            # Debug logging
+            print(f"\nRejecting member:")
+            print(f"Member address: {member_address}")
+            print(f"Approver address: {approver_address}")
 
-    def is_member(self, address):
-        """Check if an address belongs to a member"""
-        return any(member['address'] == address for member in self.members)
+            # Verify approver is an active lender
+            if not self.is_active_lender(approver_address):
+                raise ValueError("Only active lenders can reject members")
 
-    def get_member(self, address):
-        """Get member details by address"""
-        return next(
-            (member for member in self.members if member['address'] == address),
-            None
-        )
+            # Get the pending member
+            members = self.get_members()
+            print(f"\nCurrent members: {members}")  # Debug log
 
-    def get_members(self, status=None):
-        """Get all members, optionally filtered by status"""
-        if status:
-            return [member for member in self.members if member['status'] == status]
-        return self.members
+            pending_member = None
+            for member in members['pending']:
+                if member['address'] == member_address:
+                    pending_member = member
+                    break
 
-    def get_pending_requests(self) -> List[Dict[str, Any]]:
-        """Get all pending membership requests"""
-        return self.pending_requests
+            if not pending_member:
+                raise ValueError(f"No pending request found for address: {
+                                 member_address}")
+
+            # Update member status
+            pending_member['status'] = 'rejected'
+            pending_member['rejected_at'] = int(time.time())
+            pending_member['rejected_by'] = approver_address
+
+            # Update the member in blockchain
+            self.blockchain.update_member(pending_member)
+
+            return pending_member
+
+        except Exception as e:
+            import traceback
+            print(f"\nError in reject_member:")
+            print(traceback.format_exc())
+            raise
+
+    def get_members(self):
+        """Get all members"""
+        return self.blockchain.get_members()
+
+    def get_pending_requests(self):
+        """Get pending membership requests"""
+        return self.blockchain.get_pending_members()
 
     def get_rejected_requests(self) -> List[Dict[str, Any]]:
         """Get all rejected membership requests"""
         return self.rejected_requests
 
-    def update_request_status(self, request_id: str, status: str, reason: str = None) -> bool:
-        """
-        Update the status of a membership request
+    def clear_all_members(self):
+        """Clear all members from the system"""
+        return self.blockchain.clear_members()
 
-        Args:
-            request_id: The ID of the request to update
-            status: New status ('approved', 'rejected')
-            reason: Optional reason for the status change
+    def monitor_pending_requests(self):
+        """Monitor pending requests and auto-reject if they timeout"""
+        while True:
+            try:
+                if not self.blockchain or not self.blockchain.config:
+                    print("Waiting for blockchain and config initialization...")
+                    time.sleep(5)
+                    continue
 
-        Returns:
-            bool: True if update was successful, False otherwise
-        """
-        # Find request in pending requests
-        request = next(
-            (req for req in self.pending_requests if req['request_id'] == request_id),
-            None
-        )
+                members = self.blockchain.members  # Get members directly
+                current_time = int(time.time())
 
-        if not request:
-            return False
+                # Get timeout in seconds from auto_reject config
+                timeout_minutes = self.blockchain.config['auto_reject']['timeout']['value']
+                timeout_seconds = timeout_minutes * 60  # Convert minutes to seconds
 
-        # Update request status
-        request['status'] = status
-        request['update_time'] = datetime.utcnow().isoformat()
-        if reason:
-            request['update_reason'] = reason
+                # Debug logging
+                print("\nChecking pending members...")
+                print(f"Current time: {current_time}")
+                print(f"Timeout: {timeout_seconds} seconds")
+                print(f"Total members: {len(members)}")
 
-        # Move to appropriate list based on status
-        if status == 'rejected':
-            self.pending_requests.remove(request)
-            self.rejected_requests.append(request)
+                # Check each member
+                for member in members:
+                    if member['status'] == 'pending':
+                        request_age = current_time - member['timestamp']
 
-        return True
+                        # Debug logging
+                        print(f"\nChecking pending member: {member['name']}")
+                        print(f"Request age: {request_age} seconds")
+                        print(f"Member timestamp: {member['timestamp']}")
+
+                        # Auto-reject if request has timed out
+                        if request_age > timeout_seconds:
+                            print(
+                                f"\nAuto-rejecting {member['name']} due to timeout")
+                            member['status'] = 'rejected'
+                            member['rejected_at'] = current_time
+                            member['rejected_by'] = 'auto-reject'
+                            member['rejection_reason'] = 'timeout'
+
+                # Sleep for 10 seconds before next check
+                time.sleep(10)
+
+            except Exception as e:
+                print(f"Error in monitor_pending_requests: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
+                time.sleep(5)
+
+    def check_pending_members(self):
+        """Check for pending members that need auto-rejection"""
+        try:
+            current_time = int(time.time())
+
+            # Get members by status
+            pending_members = [
+                m for m in self.blockchain.members if m['status'] == 'pending']
+            active_members = [
+                m for m in self.blockchain.members if m['status'] == 'active']
+            rejected_members = [
+                m for m in self.blockchain.members if m['status'] == 'rejected']
+
+            # Print member statistics
+            print("\nMember Statistics:")
+            print(f"Active members: {len(active_members)} ({
+                  [m['name'] for m in active_members]})")
+            print(f"Pending members: {len(pending_members)} ({
+                  [m['name'] for m in pending_members]})")
+            print(f"Rejected members: {len(rejected_members)} ({
+                  [m['name'] for m in rejected_members]})")
+
+            # Check for auto-rejection if there are pending members
+            if pending_members:
+                print("\nChecking pending members for auto-rejection...")
+                print(f"Current time: {current_time}")
+                print(
+                    f"Auto-reject timeout: {self.auto_reject_timeout} seconds")
+
+                for member in pending_members:
+                    elapsed_time = current_time - member['timestamp']
+                    if elapsed_time > self.auto_reject_timeout:
+                        self.auto_reject_member(member)
+
+        except Exception as e:
+            print(f"Error checking pending members: {str(e)}")
+            raise
+
+    def vote_for_member(self, member_address, voter_address, vote_type):
+        """Process a vote for a member"""
+        try:
+            # Find target member
+            target_member = None
+            for member in self.blockchain.members:
+                if member['address'] == member_address:
+                    target_member = member
+                    break
+
+            if not target_member:
+                raise Exception('Member not found')
+
+            if target_member['status'] != 'pending':
+                raise Exception('Member is not in pending status')
+
+            # Initialize votes if not present
+            if 'votes' not in target_member:
+                target_member['votes'] = {'approve': [], 'reject': []}
+
+            # Check if already voted
+            if voter_address in target_member['votes']['approve'] or voter_address in target_member['votes']['reject']:
+                raise Exception('Already voted')
+
+            # Add vote
+            target_member['votes'][vote_type].append(voter_address)
+
+            # Count active lenders
+            active_lenders = [m for m in self.blockchain.members
+                              if m['status'] == 'active' and m['role'] == 'lender']
+            required_votes = len(active_lenders)
+
+            # Check if enough votes
+            if len(target_member['votes'][vote_type]) >= required_votes:
+                target_member['status'] = 'active' if vote_type == 'approve' else 'rejected'
+                target_member['approved_at'] = int(timestamp.time())
+                target_member['approved_by'] = ','.join(
+                    target_member['votes'][vote_type])
+                print(f"Member {target_member['name']} approved with {
+                      len(target_member['votes']['approve'])} votes")
+
+                # Add transaction to pending pool
+                self.blockchain.add_transaction({
+                    'type': 'member_approved' if vote_type == 'approve' else 'member_rejected',
+                    'member': target_member,
+                    'timestamp': int(timestamp.time())
+                })
+                return True
+            else:
+                print(f"Member {target_member['name']} has {
+                      len(target_member['votes'][vote_type])} of {required_votes} required votes")
+                return False
+
+        except Exception as e:
+            print(f"Error in vote_for_member: {str(e)}")
+            raise

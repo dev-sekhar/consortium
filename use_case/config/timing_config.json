@@ -15,12 +15,12 @@
         },
         "voting": {
             "timeout": {
-                "value": 72,
-                "unit": "hours"
+                "value": 3,
+                "unit": "minutes"
             },
             "reminder": {
-                "value": 48,
-                "unit": "hours"
+                "value": 2,
+                "unit": "minutes"
             }
         }
     },

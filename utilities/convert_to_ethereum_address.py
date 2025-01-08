@@ -1,27 +1,24 @@
 from eth_utils import to_checksum_address
 from eth_account import Account
-import secrets
 
 
-def generate_ethereum_address():
-    """Generate a new Ethereum address"""
-    # Generate a random private key
-    private_key = "0x" + secrets.token_hex(32)
+def generate_ethereum_address() -> str:
+    """Generate a valid Ethereum address"""
+    # Generate a new Ethereum account
+    account = Account.create()
+    address = account.address
 
-    # Create an account from the private key
-    account = Account.from_key(private_key)
+    # Convert to checksum address
+    checksum_address = to_checksum_address(address)
 
-    return {
-        'address': account.address,
-        'private_key': private_key
-    }
+    return checksum_address
 
 
-def validate_ethereum_address(address):
+def validate_ethereum_address(address: str) -> bool:
     """Validate an Ethereum address"""
     try:
         # Convert to checksum address and verify format
-        checksum_address = to_checksum_address(address)
+        to_checksum_address(address)
         return True
-    except:
+    except ValueError:
         return False

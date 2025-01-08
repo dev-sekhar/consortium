@@ -1,0 +1,12 @@
+{
+    "server": {
+        "host": "0.0.0.0",
+        "port": 5000,
+        "debug": true
+    },
+    "initialization": {
+        "startup_delay": 10,
+        "max_retries": 10,
+        "retry_delay": 5
+    }
+} 
