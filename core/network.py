@@ -17,6 +17,7 @@ from utilities.convert_to_ethereum_address import generate_ethereum_address, val
 import os
 import threading
 import time as timestamp
+import sys
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -63,17 +64,126 @@ def create_app(blockchain=None, membership=None):
 
 
 class Network:
-    def __init__(self):
+    def __init__(self, port, is_main_node=True, main_node_port=5000, member_name=None):
         self.app = Flask(__name__)
+        self.port = port
+        self.is_main_node = is_main_node
+        self.main_node_port = main_node_port
+        self.member_name = member_name
+
+        # Load configuration
         self.load_config()
-        self.blockchain = Blockchain(self.config)
-        self.membership = Membership(self.blockchain)
+
+        # Initialize blockchain
+        self.blockchain = None  # Initialize as None first
+
+        # If this is a member node, sync with main node first
+        if not self.is_main_node:
+            self.sync_with_main_node()
+        else:
+            # Only create new blockchain if this is the main node
+            self.blockchain = Blockchain(self.config)
+            self.membership = Membership(self.blockchain)
+            self.initialize_main_node()
 
         # Register routes
         self.register_routes()
 
         # Start block creation thread
         self.start_block_creation_thread()
+
+    def load_first_member_config(self):
+        """Load first member configuration"""
+        config_path = os.path.join(os.path.dirname(
+            __file__), '..', 'use_case', 'config', 'first_member_creation.config')
+        with open(config_path, 'r') as f:
+            self.first_member_config = json.load(f)
+
+    def initialize_main_node(self):
+        """Initialize the main node with the first member"""
+        try:
+            # Check if there are any members
+            if not self.blockchain.members:
+                # Generate address for first member
+                member_address = "0x" + os.urandom(20).hex()
+
+                # Create the first member
+                member = {
+                    'name': self.member_name,
+                    'role': 'lender',
+                    'address': member_address,
+                    'status': 'active',
+                    'created_at': int(timestamp.time())
+                }
+
+                # Add to blockchain members
+                self.blockchain.members.append(member)
+
+                # Create a transaction for the first member
+                self.blockchain.add_transaction({
+                    'type': 'member_created',
+                    'member': member,
+                    'timestamp': int(timestamp.time())
+                })
+
+                print(f"\nInitialized main node with first member: {
+                      member['name']} ({member['address']})")
+
+        except Exception as e:
+            print(f"Error initializing main node: {str(e)}")
+            raise
+
+    def sync_with_main_node(self):
+        """Sync blockchain state with main node"""
+        try:
+            print("Starting synchronization with main node...")
+
+            # Get chain from main node
+            response = requests.get(
+                f'http://localhost:{self.main_node_port}/chain')
+            if response.status_code == 200:
+                chain_data = response.json()
+                # Initialize blockchain only once
+                if self.blockchain is None:
+                    self.blockchain = Blockchain(self.config)
+                    self.membership = Membership(self.blockchain)
+
+                # Set the entire chain from main node
+                self.blockchain.chain = chain_data['chain']
+                # Update chain length
+                self.blockchain.current_index = len(self.blockchain.chain)
+                print(f"Successfully synced blockchain with main node. Chain length: {
+                      len(self.blockchain.chain)}")
+            else:
+                raise Exception(f"Failed to sync blockchain. Status code: {
+                                response.status_code}")
+
+            # Get members from main node
+            response = requests.get(
+                f'http://localhost:{self.main_node_port}/membership/list')
+            if response.status_code == 200:
+                members_data = response.json()
+                if isinstance(members_data, dict) and 'members' in members_data:
+                    self.blockchain.members = members_data['members']
+                else:
+                    self.blockchain.members = members_data if isinstance(
+                        members_data, list) else []
+                print(f"Successfully synced members with main node. Member count: {
+                      len(self.blockchain.members)}")
+            else:
+                raise Exception(f"Failed to sync members. Status code: {
+                                response.status_code}")
+
+        except Exception as e:
+            print(f"Error syncing with main node: {str(e)}")
+            sys.exit(1)
+
+    def load_config(self):
+        """Load network configuration"""
+        config_path = os.path.join(
+            os.path.dirname(__file__), 'network_config.json')
+        with open(config_path, 'r') as f:
+            self.config = json.load(f)
 
     def convert_to_seconds(self, value, unit):
         """Convert time units to seconds"""
@@ -248,17 +358,6 @@ class Network:
             except Exception as e:
                 print(f"Error getting proposals: {str(e)}")
                 return jsonify({'error': str(e)}), 500
-
-    def load_config(self):
-        """Load configuration from JSON file"""
-        try:
-            config_path = os.path.join('core', 'network_config.json')
-            with open(config_path, 'r') as f:
-                self.config = json.load(f)
-                print("Loaded network configuration successfully")
-        except Exception as e:
-            print(f"Error loading config: {str(e)}")
-            raise
 
     def start_block_creation_thread(self):
         """Start thread for periodic block creation"""

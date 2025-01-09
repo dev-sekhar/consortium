@@ -10,6 +10,7 @@ from datetime import datetime
 from utilities.convert_to_ethereum_address import generate_ethereum_address, validate_ethereum_address
 from .consensus import Consensus
 import os
+from utils.hashing_util import hash_block  # Update the import path
 
 
 class Blockchain:
@@ -244,11 +245,18 @@ class Blockchain:
             'index': 1,
             'timestamp': int(timestamp.time()),
             'transactions': [],
-            'previous_hash': '0'
+            'previous_hash': '0',
+            'hash': hash_block({
+                'index': 1,
+                'timestamp': int(timestamp.time()),
+                'transactions': [],
+                'previous_hash': '0'
+            })
         }
         self.chain.append(genesis_block)
         self.last_block_time = genesis_block['timestamp']
-        print(f"\nGenesis block created at {genesis_block['timestamp']}")
+        print(f"\nGenesis block created at {
+              genesis_block['timestamp']} with hash: {genesis_block['hash']}")
 
     def create_block(self):
         """Create a new block with all pending transactions"""
@@ -272,23 +280,22 @@ class Blockchain:
             'index': len(self.chain) + 1,
             'timestamp': current_time,
             'transactions': self.pending_transactions.copy(),
-            'previous_hash': self.hash_block(self.chain[-1])
+            # Use the hash of the last block
+            'previous_hash': self.chain[-1]['hash'],
+            'hash': '',  # Placeholder for the hash
         }
 
-        self.pending_transactions = []
+        # Calculate the hash for the new block
+        block['hash'] = hash_block(block)
+
+        self.pending_transactions = []  # Clear pool after creating block
         self.last_block_time = current_time
         if hasattr(self, '_last_log_time'):
             delattr(self, '_last_log_time')
 
         print(f"\nCreated block #{block['index']} with {
-              len(block['transactions'])} transaction(s)")
+              len(block['transactions'])} transaction(s) and hash: {block['hash']}")
         return block
-
-    def hash_block(self, block):
-        """Create a SHA-256 hash of a block"""
-        # Convert the block to a string and encode it
-        block_string = json.dumps(block, sort_keys=True).encode()
-        return hashlib.sha256(block_string).hexdigest()
 
     def add_block(self, block):
         """Add a block to the chain"""

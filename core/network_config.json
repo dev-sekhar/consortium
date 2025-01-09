@@ -1,7 +1,7 @@
 {
     "main_node": {
         "port": 5000,
-        "host": "0.0.0.0"
+        "host": "localhost"
     },
     "member_nodes": {
         "min_port": 5001,
@@ -32,7 +32,7 @@
         },
         "block_creation": {
             "interval": {
-                "value": 10,
+                "value": 2,
                 "unit": "minutes"
             },
             "check_frequency": {
