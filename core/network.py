@@ -18,6 +18,7 @@ import os
 import threading
 import time as timestamp
 import sys
+from utils.crypto_utils import CryptoUtils
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -74,23 +75,29 @@ class Network:
         # Load configuration
         self.load_config()
 
-        # Initialize blockchain
-        self.blockchain = None  # Initialize as None first
+        # Initialize blockchain as None
+        self.blockchain = None
+        self.membership = None
 
-        # If this is a member node, sync with main node first
-        if not self.is_main_node:
-            self.sync_with_main_node()
-        else:
-            # Only create new blockchain if this is the main node
+        if self.is_main_node:
+            print("Initializing as main node...")
+            # Create new blockchain only if main node
             self.blockchain = Blockchain(self.config)
             self.membership = Membership(self.blockchain)
             self.initialize_main_node()
+        else:
+            print("Initializing as member node...")
+            # For member nodes, sync first before any blockchain operations
+            self.sync_with_main_node()
+            if not self.blockchain:
+                raise Exception("Failed to sync blockchain from main node")
 
         # Register routes
         self.register_routes()
 
-        # Start block creation thread
-        self.start_block_creation_thread()
+        # Start block creation thread only after blockchain is properly initialized
+        if self.blockchain:
+            self.start_block_creation_thread()
 
     def load_first_member_config(self):
         """Load first member configuration"""
@@ -102,8 +109,10 @@ class Network:
     def initialize_main_node(self):
         """Initialize the main node with the first member"""
         try:
-            # Check if there are any members
             if not self.blockchain.members:
+                # Generate key pair for first member
+                private_key, public_key = CryptoUtils.generate_key_pair()
+
                 # Generate address for first member
                 member_address = "0x" + os.urandom(20).hex()
 
@@ -112,9 +121,15 @@ class Network:
                     'name': self.member_name,
                     'role': 'lender',
                     'address': member_address,
+                    'public_key': public_key,
                     'status': 'active',
                     'created_at': int(timestamp.time())
                 }
+
+                # Store private key securely (in this example, we'll print it)
+                print(f"\nIMPORTANT: Save this private key securely:")
+                print(f"Private Key for {member['name']}:")
+                print(private_key)
 
                 # Add to blockchain members
                 self.blockchain.members.append(member)
@@ -143,15 +158,12 @@ class Network:
                 f'http://localhost:{self.main_node_port}/chain')
             if response.status_code == 200:
                 chain_data = response.json()
-                # Initialize blockchain only once
-                if self.blockchain is None:
-                    self.blockchain = Blockchain(self.config)
-                    self.membership = Membership(self.blockchain)
 
-                # Set the entire chain from main node
-                self.blockchain.chain = chain_data['chain']
-                # Update chain length
-                self.blockchain.current_index = len(self.blockchain.chain)
+                # Initialize blockchain with existing chain
+                self.blockchain = Blockchain(
+                    self.config, existing_chain=chain_data['chain'])
+                self.membership = Membership(self.blockchain)
+
                 print(f"Successfully synced blockchain with main node. Chain length: {
                       len(self.blockchain.chain)}")
             else:

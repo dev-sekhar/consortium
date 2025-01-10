@@ -14,11 +14,23 @@ from utils.hashing_util import hash_block  # Update the import path
 
 
 class Blockchain:
-    def __init__(self, config):
+    def __init__(self, config, existing_chain=None):
+        self.config = config
+        self.current_index = 0
         self.chain = []
         self.members = []
+
+        if existing_chain:
+            # Use existing chain if provided
+            self.chain = existing_chain
+            self.current_index = len(self.chain)
+            print(f"Initialized blockchain with existing chain. Length: {
+                  self.current_index}")
+        else:
+            # Create genesis block only if no existing chain
+            self.create_genesis_block()
+
         self.pending_transactions = []
-        self.config = config
 
         # Convert block interval to seconds
         interval_value = config['blockchain']['block_creation']['interval']['value']
@@ -28,9 +40,6 @@ class Blockchain:
 
         self.last_block_time = 0
         self.max_transactions = config['blockchain']['max_transactions_per_block']
-
-        # Create genesis block
-        self.create_genesis_block()
 
     def convert_to_seconds(self, value, unit):
         """Convert time units to seconds"""
